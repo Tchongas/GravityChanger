@@ -1,38 +1,41 @@
 package me.andrew.gravitychanger.config;
 
-import me.shedaniel.autoconfig.ConfigData;
-import me.shedaniel.autoconfig.annotation.Config;
-import me.shedaniel.autoconfig.annotation.ConfigEntry;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import net.fabricmc.loader.api.FabricLoader;
 
-@Config(
-        name ="gravitychanger"
-)
-public class GravityChangerConfig implements ConfigData {
-    @ConfigEntry.Gui.PrefixText
-    @ConfigEntry.Gui.Excluded
-    private boolean client;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
-    @ConfigEntry.Gui.Tooltip(
-            count = 2
-    )
+public class GravityChangerConfig {
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
     public boolean keepWorldLook = true;
-
-    @ConfigEntry.Gui.PrefixText
-    @ConfigEntry.Gui.Excluded
-    private boolean server;
-
-    @ConfigEntry.Gui.Tooltip(
-            count = 2
-    )
     public boolean resetGravityOnDimensionChange = true;
-
-    @ConfigEntry.Gui.Tooltip(
-            count = 2
-    )
     public boolean resetGravityOnRespawn = true;
-
-    @ConfigEntry.Gui.Tooltip(
-            count = 2
-    )
     public boolean voidDamageAboveWorld = true;
+
+    public static GravityChangerConfig load() {
+        Path path = FabricLoader.getInstance().getConfigDir().resolve("gravitychanger.json");
+        if (Files.exists(path)) {
+            try (Reader reader = Files.newBufferedReader(path)) {
+                GravityChangerConfig config = GSON.fromJson(reader, GravityChangerConfig.class);
+                if (config != null) return config;
+            } catch (IOException ignored) {
+            }
+        }
+
+        GravityChangerConfig config = new GravityChangerConfig();
+        try {
+            Files.createDirectories(path.getParent());
+            try (Writer writer = Files.newBufferedWriter(path)) {
+                GSON.toJson(config, writer);
+            }
+        } catch (IOException ignored) {
+        }
+        return config;
+    }
 }

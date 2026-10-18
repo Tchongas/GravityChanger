@@ -104,6 +104,20 @@ public abstract class EntityRenderDispatcherMixin {
         }
     }
 
+    @ModifyVariable(
+            method = "drawBox",
+            at = @At(
+                    value = "INVOKE_ASSIGN",
+                    target = "Lnet/minecraft/util/math/Box;offset(DDD)Lnet/minecraft/util/math/Box;"
+            ),
+            ordinal = 0
+    )
+    private Box gravitychanger$rotateDebugBox(Box box, MatrixStack matrices, VertexConsumer vertices, Entity entity, float red, float green, float blue) {
+        Direction gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection();
+        if (gravityDirection == Direction.DOWN) return box;
+        return RotationUtil.boxWorldToPlayer(box, gravityDirection);
+    }
+
     private static void gravitychanger$renderShadowPartPlayer(MatrixStack.Entry entry, VertexConsumer vertices, WorldView world, BlockPos pos, double x, double y, double z, float radius, float opacity, Direction gravityDirection) {
         BlockPos posBelow = pos.offset(gravityDirection);
         BlockState blockStateBelow = world.getBlockState(posBelow);
@@ -144,39 +158,4 @@ public abstract class EntityRenderDispatcherMixin {
         }
     }
 
-    @ModifyVariable(
-            method = "renderHitbox",
-            at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lnet/minecraft/util/math/Box;offset(DDD)Lnet/minecraft/util/math/Box;",
-                    ordinal = 0
-            ),
-            ordinal = 0
-    )
-    private static Box modify_renderHitbox_Box_0(Box box, MatrixStack matrices, VertexConsumer vertices, Entity entity, float tickDelta) {
-        Direction gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return box;
-        }
-
-        return RotationUtil.boxWorldToPlayer(box, gravityDirection);
-    }
-
-    @ModifyVariable(
-            method = "renderHitbox",
-            at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lnet/minecraft/entity/Entity;getRotationVec(F)Lnet/minecraft/util/math/Vec3d;",
-                    ordinal = 0
-            ),
-            ordinal = 0
-    )
-    private static Vec3d modify_renderHitbox_Vec3d_0(Vec3d vec3d, MatrixStack matrices, VertexConsumer vertices, Entity entity, float tickDelta) {
-        Direction gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return vec3d;
-        }
-
-        return RotationUtil.vecWorldToPlayer(vec3d, gravityDirection);
-    }
 }

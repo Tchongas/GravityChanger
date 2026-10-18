@@ -11,18 +11,25 @@ import net.minecraft.util.shape.VoxelShape;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Optional;
 
 @Mixin(EntityShapeContext.class)
 public abstract class EntityShapeContextMixin {
-    @Shadow @Final private Entity entity;
+    @Unique private Entity gravitychanger$entity;
 
     @Shadow @Final private double minY;
+
+    @Inject(method = "<init>(Lnet/minecraft/entity/Entity;)V", at = @At("RETURN"))
+    private void gravitychanger$captureEntity(Entity entity, CallbackInfo ci) {
+        this.gravitychanger$entity = entity;
+    }
 
     @Redirect(
             method = "<init>(Lnet/minecraft/entity/Entity;)V",
@@ -47,9 +54,9 @@ public abstract class EntityShapeContextMixin {
             cancellable = true
     )
     private void inject_isAbove(VoxelShape shape, BlockPos pos, boolean defaultValue, CallbackInfoReturnable<Boolean> cir) {
-        if(this.entity == null) return;
+        if(this.gravitychanger$entity == null) return;
 
-        Direction gravityDirection = ((EntityAccessor) this.entity).gravitychanger$getAppliedGravityDirection();
+        Direction gravityDirection = ((EntityAccessor) this.gravitychanger$entity).gravitychanger$getAppliedGravityDirection();
         if(gravityDirection == Direction.DOWN) return;
 
         cir.setReturnValue(this.minY > RotationUtil.boxWorldToPlayer(new Box(pos), gravityDirection).minY + RotationUtil.boxWorldToPlayer(shape.getBoundingBox().expand(-9.999999747378752E-6D), gravityDirection).maxX);

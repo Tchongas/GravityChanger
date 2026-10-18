@@ -20,9 +20,13 @@ public abstract class ServerPlayNetworkHandlerMixin {
 
     @Shadow public ServerPlayerEntity player;
 
-    @Shadow private static double clampHorizontal(double d) { return 0; };
+    private static double gravitychanger$clampHorizontal(double value) {
+        return Math.max(-3.0E7D, Math.min(3.0E7D, value));
+    }
 
-    @Shadow private static double clampVertical(double d) { return 0; };
+    private static double gravitychanger$clampVertical(double value) {
+        return Math.max(-2.0E7D, Math.min(2.0E7D, value));
+    }
 
     @Shadow private double updatedX;
 
@@ -80,9 +84,9 @@ public abstract class ServerPlayNetworkHandlerMixin {
         }
 
         gravitychanger$onPlayerMove_playerMovementY = RotationUtil.vecWorldToPlayer(
-                clampHorizontal(packet.getX(this.player.getX())) - this.updatedX,
-                clampVertical(packet.getY(this.player.getY())) - this.updatedY,
-                clampHorizontal(packet.getZ(this.player.getZ())) - this.updatedZ,
+                gravitychanger$clampHorizontal(packet.getX(this.player.getX())) - this.updatedX,
+                gravitychanger$clampVertical(packet.getY(this.player.getY())) - this.updatedY,
+                gravitychanger$clampHorizontal(packet.getZ(this.player.getZ())) - this.updatedZ,
                 gravityDirection
         ).y;
         return gravitychanger$onPlayerMove_playerMovementY > 0.0D;

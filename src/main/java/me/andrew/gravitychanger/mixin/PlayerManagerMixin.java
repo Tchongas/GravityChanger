@@ -6,6 +6,9 @@ import net.minecraft.network.ClientConnection;
 import net.minecraft.server.PlayerManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+
+import java.util.List;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -13,30 +16,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(PlayerManager.class)
 public abstract class PlayerManagerMixin {
-    @Inject(
-            method = "onPlayerConnect",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/server/network/ServerPlayNetworkHandler;sendPacket(Lnet/minecraft/network/Packet;)V",
-                    ordinal = 0,
-                    shift = At.Shift.AFTER
-            )
-    )
-    private void inject_onPlayerConnect_sendPacket_0(ClientConnection connection, ServerPlayerEntity player, CallbackInfo ci) {
-        ((ServerPlayerEntityAccessor) player).gravitychanger$sendGravityPacket(((RotatableEntityAccessor) player).gravitychanger$getGravityDirection(), true);
+    @Shadow private List<ServerPlayerEntity> players;
+
+    @Inject(method = "onPlayerConnect", at = @At("TAIL"))
+    private void gravitychanger$syncAfterJoin(ClientConnection connection, ServerPlayerEntity player, CallbackInfo ci) {
+        for (ServerPlayerEntity currentPlayer : this.players) {
+            ((ServerPlayerEntityAccessor) currentPlayer).gravitychanger$sendGravityPacket(((RotatableEntityAccessor) currentPlayer).gravitychanger$getGravityDirection(), true);
+        }
     }
 
-    // This uses the old player instance but it should be ok as long as the gravity is not changed between new player creation and this
-    @Inject(
-            method = "respawnPlayer",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/server/network/ServerPlayNetworkHandler;sendPacket(Lnet/minecraft/network/Packet;)V",
-                    ordinal = 1,
-                    shift = At.Shift.AFTER
-            )
-    )
-    private void inject_respawnPlayer_sendPacket_1(ServerPlayerEntity player, boolean alive, CallbackInfoReturnable<ServerPlayerEntity> cir) {
-        ((ServerPlayerEntityAccessor) player).gravitychanger$sendGravityPacket(((RotatableEntityAccessor) player).gravitychanger$getGravityDirection(), true);
+    @Inject(method = "respawnPlayer", at = @At("RETURN"))
+    private void gravitychanger$syncAfterRespawn(ServerPlayerEntity player, boolean alive, CallbackInfoReturnable<ServerPlayerEntity> cir) {
+        ServerPlayerEntity respawnedPlayer = cir.getReturnValue();
+        ((ServerPlayerEntityAccessor) respawnedPlayer).gravitychanger$sendGravityPacket(((RotatableEntityAccessor) respawnedPlayer).gravitychanger$getGravityDirection(), true);
     }
 }

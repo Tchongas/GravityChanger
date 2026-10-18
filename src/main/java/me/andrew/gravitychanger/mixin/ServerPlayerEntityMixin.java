@@ -3,7 +3,7 @@ package me.andrew.gravitychanger.mixin;
 import me.andrew.gravitychanger.GravityChangerMod;
 import me.andrew.gravitychanger.accessor.RotatableEntityAccessor;
 import me.andrew.gravitychanger.accessor.ServerPlayerEntityAccessor;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import io.netty.buffer.Unpooled;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.play.CustomPayloadS2CPacket;
@@ -12,6 +12,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.Direction;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -22,6 +23,7 @@ public abstract class ServerPlayerEntityMixin implements RotatableEntityAccessor
     @Shadow public ServerPlayNetworkHandler networkHandler;
 
     private Direction gravitychanger$gravityDirection = Direction.DOWN;
+    @Unique private boolean gravitychanger$initialSyncComplete;
 
     @Override
     public Direction gravitychanger$getGravityDirection() {
@@ -37,7 +39,6 @@ public abstract class ServerPlayerEntityMixin implements RotatableEntityAccessor
         if(this.gravitychanger$gravityDirection == gravityDirection) return;
 
         this.gravitychanger$sendGravityPacket(gravityDirection, initialGravity);
-        this.gravitychanger$setTrackedGravityDirection(gravityDirection);
 
         Direction prevGravityDirection = this.gravitychanger$gravityDirection;
         this.gravitychanger$gravityDirection = gravityDirection;
@@ -51,29 +52,31 @@ public abstract class ServerPlayerEntityMixin implements RotatableEntityAccessor
 
     @Override
     public void gravitychanger$sendGravityPacket(Direction gravityDirection, boolean initialGravity) {
-        if(this.networkHandler == null) return;
+        ServerPlayerEntity gravityPlayer = (ServerPlayerEntity) (Object) this;
+        if (gravityPlayer.getServer() == null) return;
 
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeEnumConstant(gravityDirection);
-        buf.writeBoolean(initialGravity);
-        this.networkHandler.sendPacket(new CustomPayloadS2CPacket(GravityChangerMod.CHANNEL_GRAVITY, buf));
+        for (ServerPlayerEntity recipient : gravityPlayer.getServer().getPlayerManager().getPlayerList()) {
+            PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+            buf.writeInt(gravityPlayer.getEntityId());
+            buf.writeEnumConstant(gravityDirection);
+            buf.writeBoolean(initialGravity);
+            recipient.networkHandler.sendPacket(new CustomPayloadS2CPacket(GravityChangerMod.CHANNEL_GRAVITY, buf));
+        }
     }
 
-    @Inject(
-            method = "moveToWorld",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/server/network/ServerPlayNetworkHandler;sendPacket(Lnet/minecraft/network/Packet;)V",
-                    ordinal = 1,
-                    shift = At.Shift.AFTER
-            )
-    )
-    private void inject_moveToWorld_sendPacket_1(CallbackInfoReturnable<ServerPlayerEntity> cir) {
-        Direction gravityDirection = this.gravitychanger$getGravityDirection();
-        if(gravityDirection != Direction.DOWN && GravityChangerMod.config.resetGravityOnDimensionChange) {
-            this.gravitychanger$setGravityDirection(Direction.DOWN, true);
-        } else {
-            this.gravitychanger$sendGravityPacket(gravityDirection, true);
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void gravitychanger$syncAfterTrackingStarts(CallbackInfo ci) {
+        if (this.gravitychanger$initialSyncComplete) return;
+
+        ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
+        if (player.getServer() == null || player.networkHandler == null) return;
+        this.gravitychanger$initialSyncComplete = true;
+        for (ServerPlayerEntity currentPlayer : player.getServer().getPlayerManager().getPlayerList()) {
+            RotatableEntityAccessor gravity = (RotatableEntityAccessor) currentPlayer;
+            Direction direction = gravity.gravitychanger$getGravityDirection();
+            if (direction != Direction.DOWN) {
+                ((ServerPlayerEntityAccessor) currentPlayer).gravitychanger$sendGravityPacket(direction, true);
+            }
         }
     }
 

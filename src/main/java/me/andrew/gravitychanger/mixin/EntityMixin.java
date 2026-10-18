@@ -50,23 +50,19 @@ public abstract class EntityMixin implements EntityAccessor {
 
     @Shadow public abstract double getX();
 
-    @Shadow public abstract Vec3d getEyePos();
+    @Shadow public abstract Vec3d getCameraPosVec(float tickDelta);
 
     @Shadow public abstract double getY();
 
     @Shadow public abstract double getZ();
 
+    @Shadow public abstract void setPos(double x, double y, double z);
+
     @Shadow public World world;
-
-    @Shadow public abstract int getBlockX();
-
-    @Shadow public abstract int getBlockZ();
 
     @Shadow protected boolean submergedInWater;
 
     @Shadow public abstract boolean isSubmergedIn(Tag<Fluid> fluidTag);
-
-    @Shadow @Nullable protected Tag<Fluid> submergedFluidTag;
 
     @Shadow public boolean noClip;
 
@@ -76,8 +72,6 @@ public abstract class EntityMixin implements EntityAccessor {
 
     @Shadow public abstract Box getBoundingBox();
 
-    @Shadow public static Vec3d adjustMovementForCollisions(Vec3d movement, Box entityBoundingBox, List<VoxelShape> collisions) { return null; };
-
     @Shadow public abstract Vec3d getPos();
 
     @Shadow @Final protected Random random;
@@ -85,8 +79,6 @@ public abstract class EntityMixin implements EntityAccessor {
     @Shadow public abstract boolean isConnectedThroughVehicle(Entity entity);
 
     @Shadow public abstract void addVelocity(double deltaX, double deltaY, double deltaZ);
-
-    @Shadow protected abstract void tickInVoid();
 
     @Override
     public Direction gravitychanger$getAppliedGravityDirection() {
@@ -104,35 +96,110 @@ public abstract class EntityMixin implements EntityAccessor {
     }
 
     @Inject(
-            method = "calculateBoundingBox",
-            at = @At("RETURN"),
-            cancellable = true
-    )
-    private void inject_calculateBoundingBox(CallbackInfoReturnable<Box> cir) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        Box box = cir.getReturnValue().offset(this.pos.negate());
-        if(gravityDirection.getDirection() == Direction.AxisDirection.POSITIVE) {
-            box = box.offset(0.0D, -1.0E-6D, 0.0D);
-        }
-        cir.setReturnValue(RotationUtil.boxPlayerToWorld(box, gravityDirection).offset(this.pos));
-    }
-
-    @Inject(
             method = "calculateBoundsForPose",
             at = @At("RETURN"),
             cancellable = true
     )
-    private void inject_calculateBoundsForPose(EntityPose pos, CallbackInfoReturnable<Box> cir) {
+    private void gravitychanger$calculateBoundsForPose(EntityPose pose, CallbackInfoReturnable<Box> cir) {
         Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
+        if (gravityDirection == Direction.DOWN) return;
 
-        Box box = cir.getReturnValue().offset(this.pos.negate());
-        if(gravityDirection.getDirection() == Direction.AxisDirection.POSITIVE) {
-            box = box.offset(0.0D, -1.0E-6D, 0.0D);
+        Box playerBox = cir.getReturnValue().offset(this.pos.negate());
+        cir.setReturnValue(RotationUtil.boxPlayerToWorld(playerBox, gravityDirection).offset(this.pos));
+    }
+
+    @Inject(method = "moveToBoundingBoxCenter", at = @At("HEAD"), cancellable = true)
+    private void gravitychanger$moveToGravityCenter(CallbackInfo ci) {
+        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
+        if (gravityDirection == Direction.DOWN) return;
+
+        Box box = this.getBoundingBox();
+        double x = (box.minX + box.maxX) / 2.0D;
+        double y = (box.minY + box.maxY) / 2.0D;
+        double z = (box.minZ + box.maxZ) / 2.0D;
+        switch (gravityDirection) {
+            case UP -> y = box.maxY;
+            case NORTH -> z = box.minZ;
+            case SOUTH -> z = box.maxZ;
+            case WEST -> x = box.minX;
+            case EAST -> x = box.maxX;
         }
-        cir.setReturnValue(RotationUtil.boxPlayerToWorld(box, gravityDirection).offset(this.pos));
+        this.setPos(x, y, z);
+        ci.cancel();
+    }
+
+    @ModifyVariable(method = "setBoundingBox", at = @At("HEAD"), argsOnly = true)
+    private Box gravitychanger$rejectUprightBoundingBox(Box box) {
+        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
+        if (gravityDirection == Direction.DOWN) return box;
+
+        double height = this.dimensions.height;
+        double axisLength = gravityDirection.getAxis().choose(box.getXLength(), box.getYLength(), box.getZLength());
+        boolean wrongShape = Math.abs(axisLength - height) > 1.0E-5D;
+        if (gravityDirection == Direction.UP) {
+            wrongShape = Math.abs(box.minY - this.pos.y) < 1.0E-5D && Math.abs(box.maxY - this.pos.y) > 1.0E-5D;
+        }
+        return wrongShape ? this.gravitychanger$createBoundingBox(gravityDirection) : box;
+    }
+
+    @Inject(method = "calculateDimensions", at = @At("RETURN"))
+    private void gravitychanger$rotateBoundingBox(CallbackInfo ci) {
+        this.gravitychanger$updateBoundingBox();
+    }
+
+    private void gravitychanger$updateBoundingBox() {
+        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
+        if (gravityDirection == Direction.DOWN) return;
+
+        ((Entity) (Object) this).setBoundingBox(this.gravitychanger$createBoundingBox(gravityDirection));
+    }
+
+    private Box gravitychanger$createBoundingBox(Direction gravityDirection) {
+        double halfWidth = this.dimensions.width / 2.0D;
+        Box playerBox = new Box(-halfWidth, 0.0D, -halfWidth, halfWidth, this.dimensions.height, halfWidth);
+        return RotationUtil.boxPlayerToWorld(playerBox, gravityDirection).offset(this.pos);
+    }
+
+    @Inject(
+            method = "adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void gravitychanger$adjustMovementForCollisions(Vec3d movement, CallbackInfoReturnable<Vec3d> cir) {
+        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
+        if (gravityDirection == Direction.DOWN || movement.lengthSquared() == 0.0D) return;
+
+        this.gravitychanger$updateBoundingBox();
+        Entity entity = (Entity) (Object) this;
+        Box box = this.getBoundingBox();
+        List<VoxelShape> collisions = this.world.getCollisions(entity, box.stretch(movement), other -> true).toList();
+        Vec3d playerMovement = RotationUtil.vecWorldToPlayer(movement, gravityDirection);
+        double x = playerMovement.x;
+        double y = playerMovement.y;
+        double z = playerMovement.z;
+        Direction directionX = RotationUtil.dirPlayerToWorld(Direction.EAST, gravityDirection);
+        Direction directionY = RotationUtil.dirPlayerToWorld(Direction.UP, gravityDirection);
+        Direction directionZ = RotationUtil.dirPlayerToWorld(Direction.SOUTH, gravityDirection);
+
+        if (y != 0.0D) {
+            y = VoxelShapes.calculateMaxOffset(directionY.getAxis(), box, collisions.stream(), y * directionY.getDirection().offset()) * directionY.getDirection().offset();
+            if (y != 0.0D) box = box.offset(RotationUtil.vecPlayerToWorld(0.0D, y, 0.0D, gravityDirection));
+        }
+
+        boolean zFirst = Math.abs(x) < Math.abs(z);
+        if (zFirst && z != 0.0D) {
+            z = VoxelShapes.calculateMaxOffset(directionZ.getAxis(), box, collisions.stream(), z * directionZ.getDirection().offset()) * directionZ.getDirection().offset();
+            if (z != 0.0D) box = box.offset(RotationUtil.vecPlayerToWorld(0.0D, 0.0D, z, gravityDirection));
+        }
+        if (x != 0.0D) {
+            x = VoxelShapes.calculateMaxOffset(directionX.getAxis(), box, collisions.stream(), x * directionX.getDirection().offset()) * directionX.getDirection().offset();
+            if (!zFirst && x != 0.0D) box = box.offset(RotationUtil.vecPlayerToWorld(x, 0.0D, 0.0D, gravityDirection));
+        }
+        if (!zFirst && z != 0.0D) {
+            z = VoxelShapes.calculateMaxOffset(directionZ.getAxis(), box, collisions.stream(), z * directionZ.getDirection().offset()) * directionZ.getDirection().offset();
+        }
+
+        cir.setReturnValue(RotationUtil.vecPlayerToWorld(x, y, z, gravityDirection));
     }
 
     @Inject(
@@ -157,18 +224,6 @@ public abstract class EntityMixin implements EntityAccessor {
         if(gravityDirection == Direction.DOWN) return;
 
         cir.setReturnValue(new BlockPos(this.pos.add(Vec3d.of(gravityDirection.getVector()).multiply(0.5000001D))));
-    }
-
-    @Inject(
-            method = "getEyePos",
-            at = @At("HEAD"),
-            cancellable = true
-    )
-    private void inject_getEyePos(CallbackInfoReturnable<Vec3d> cir) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        cir.setReturnValue(RotationUtil.vecPlayerToWorld(0.0D, this.standingEyeHeight, 0.0D, gravityDirection).add(this.pos));
     }
 
     @Inject(
@@ -197,7 +252,7 @@ public abstract class EntityMixin implements EntityAccessor {
         Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
         if(gravityDirection == Direction.DOWN) return;
 
-        cir.setReturnValue(this.world.isPosLoaded(this.getBlockX(), this.getBlockZ()) ? this.world.getBrightness(new BlockPos(this.getEyePos())) : 0.0F);
+        cir.setReturnValue(this.world.getBrightness(new BlockPos(this.getCameraPosVec(1.0F))));
     }
 
     @ModifyVariable(
@@ -289,236 +344,6 @@ public abstract class EntityMixin implements EntityAccessor {
 //        }
 
         cir.setReturnValue(blockPos);
-    }
-
-    @ModifyVariable(
-            method = "adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lnet/minecraft/world/World;getEntityCollisions(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Box;)Ljava/util/List;",
-                    ordinal = 0
-            ),
-            ordinal = 0
-    )
-    private Vec3d modify_adjustMovementForCollisions_Vec3d_0(Vec3d vec3d) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return vec3d;
-        }
-
-        return RotationUtil.vecWorldToPlayer(vec3d, gravityDirection);
-    }
-
-    @Inject(
-            method = "adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At("RETURN"),
-            cancellable = true
-    )
-    private void inject_adjustMovementForCollisions(CallbackInfoReturnable<Vec3d> cir) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        cir.setReturnValue(RotationUtil.vecPlayerToWorld(cir.getReturnValue(), gravityDirection));
-    }
-
-    @Redirect(
-            method = "adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/util/math/Box;stretch(DDD)Lnet/minecraft/util/math/Box;",
-                    ordinal = 0
-            )
-    )
-    private Box redirect_adjustMovementForCollisions_stretch_0(Box box, double x, double y, double z) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return box.stretch(x, y, z);
-        }
-
-        return box.stretch(RotationUtil.vecPlayerToWorld(x, y, z, gravityDirection));
-    }
-
-    @Redirect(
-            method = "adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/util/math/Box;offset(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Box;",
-                    ordinal = 0
-            )
-    )
-    private Box redirect_adjustMovementForCollisions_offset_0(Box box, Vec3d vec3d) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return box.offset(vec3d);
-        }
-
-        return box.offset(RotationUtil.vecPlayerToWorld(vec3d, gravityDirection));
-    }
-
-    @Redirect(
-            method = "adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/util/math/Box;offset(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Box;",
-                    ordinal = 1
-            )
-    )
-    private Box redirect_adjustMovementForCollisions_offset_1(Box box, Vec3d vec3d) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return box.offset(vec3d);
-        }
-
-        return box.offset(RotationUtil.vecPlayerToWorld(vec3d, gravityDirection));
-    }
-
-    @ModifyVariable(
-            method = "adjustMovementForCollisions(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Box;Lnet/minecraft/world/World;Ljava/util/List;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At("HEAD"),
-            ordinal = 0
-    )
-    private static Vec3d modify_adjustMovementForCollisions_Vec3d_0(Vec3d vec3d, Entity entity) {
-        if(entity == null) {
-            return vec3d;
-        }
-
-        Direction gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return vec3d;
-        }
-
-        return RotationUtil.vecPlayerToWorld(vec3d, gravityDirection);
-    }
-
-    @Inject(
-            method = "adjustMovementForCollisions(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Box;Lnet/minecraft/world/World;Ljava/util/List;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At("RETURN"),
-            cancellable = true
-    )
-    private static void inject_adjustMovementForCollisions(Entity entity, Vec3d movement, Box entityBoundingBox, World world, List<VoxelShape> collisions, CallbackInfoReturnable<Vec3d> cir) {
-        if(entity == null) return;
-
-        Direction gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        cir.setReturnValue(RotationUtil.vecWorldToPlayer(cir.getReturnValue(), gravityDirection));
-    }
-
-    @Redirect(
-            method = "adjustMovementForCollisions(Lnet/minecraft/entity/Entity;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Box;Lnet/minecraft/world/World;Ljava/util/List;)Lnet/minecraft/util/math/Vec3d;",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/entity/Entity;adjustMovementForCollisions(Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Box;Ljava/util/List;)Lnet/minecraft/util/math/Vec3d;",
-                    ordinal = 0
-            )
-    )
-    private static Vec3d redirect_adjustMovementForCollisions_adjustMovementForCollisions_0(Vec3d movement, Box entityBoundingBox, List<VoxelShape> collisions, Entity entity) {
-        Direction gravityDirection;
-        if(entity == null || (gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection()) == Direction.DOWN) {
-            return adjustMovementForCollisions(movement, entityBoundingBox, collisions);
-        }
-
-        Vec3d playerMovement = RotationUtil.vecWorldToPlayer(movement, gravityDirection);
-        double playerMovementX = playerMovement.x;
-        double playerMovementY = playerMovement.y;
-        double playerMovementZ = playerMovement.z;
-        Direction directionX = RotationUtil.dirPlayerToWorld(Direction.EAST, gravityDirection);
-        Direction directionY = RotationUtil.dirPlayerToWorld(Direction.UP, gravityDirection);
-        Direction directionZ = RotationUtil.dirPlayerToWorld(Direction.SOUTH, gravityDirection);
-        if (playerMovementY != 0.0D) {
-            playerMovementY = VoxelShapes.calculateMaxOffset(directionY.getAxis(), entityBoundingBox, collisions, playerMovementY * directionY.getDirection().offset()) * directionY.getDirection().offset();
-            if (playerMovementY != 0.0D) {
-                entityBoundingBox = entityBoundingBox.offset(RotationUtil.vecPlayerToWorld(0.0D, playerMovementY, 0.0D, gravityDirection));
-            }
-        }
-
-        boolean isZLargerThanX = Math.abs(playerMovementX) < Math.abs(playerMovementZ);
-        if (isZLargerThanX && playerMovementZ != 0.0D) {
-            playerMovementZ = VoxelShapes.calculateMaxOffset(directionZ.getAxis(), entityBoundingBox, collisions, playerMovementZ * directionZ.getDirection().offset()) * directionZ.getDirection().offset();
-            if (playerMovementZ != 0.0D) {
-                entityBoundingBox = entityBoundingBox.offset(RotationUtil.vecPlayerToWorld(0.0D, 0.0D, playerMovementZ, gravityDirection));
-            }
-        }
-
-        if (playerMovementX != 0.0D) {
-            playerMovementX = VoxelShapes.calculateMaxOffset(directionX.getAxis(), entityBoundingBox, collisions, playerMovementX * directionX.getDirection().offset()) * directionX.getDirection().offset();
-            if (!isZLargerThanX && playerMovementX != 0.0D) {
-                entityBoundingBox = entityBoundingBox.offset(RotationUtil.vecPlayerToWorld(playerMovementX, 0.0D, 0.0D, gravityDirection));
-            }
-        }
-
-        if (!isZLargerThanX && playerMovementZ != 0.0D) {
-            playerMovementZ = VoxelShapes.calculateMaxOffset(directionZ.getAxis(), entityBoundingBox, collisions, playerMovementZ * directionZ.getDirection().offset()) * directionZ.getDirection().offset();
-        }
-
-        return RotationUtil.vecPlayerToWorld(playerMovementX, playerMovementY, playerMovementZ, gravityDirection);
-    }
-
-    @Inject(
-            method = "updateSubmergedInWaterState",
-            at = @At("HEAD"),
-            cancellable = true
-    )
-    private void inject_updateSubmergedInWaterState(CallbackInfo ci) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        ci.cancel();
-
-        this.submergedInWater = this.isSubmergedIn(FluidTags.WATER);
-        this.submergedFluidTag = null;
-        Vec3d mouthPos = this.getEyePos().subtract(RotationUtil.vecPlayerToWorld(0.0D, 0.1111111119389534D, 0.0D, gravityDirection));
-        BlockPos blockPos = new BlockPos(mouthPos);
-        FluidState fluidState = this.world.getFluidState(blockPos);
-        Iterator<Tag<Fluid>> var6 = FluidTags.getTags().iterator();
-
-        Tag<Fluid> tag;
-        do {
-            if (!var6.hasNext()) {
-                return;
-            }
-
-            tag = var6.next();
-        } while(!fluidState.isIn(tag));
-
-        Box box = new Box(blockPos.getX(), blockPos.getY(), blockPos.getZ(), blockPos.getX() + 1, blockPos.getY() + fluidState.getHeight(this.world, blockPos), blockPos.getZ() + 1);
-        if (box.contains(mouthPos)) {
-            this.submergedFluidTag = tag;
-        }
-    }
-
-    @Redirect(
-            method = "isInsideWall",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/util/math/Box;of(Lnet/minecraft/util/math/Vec3d;DDD)Lnet/minecraft/util/math/Box;",
-                    ordinal = 0
-            )
-    )
-    private Box redirect_isInsideWall_of_0(Vec3d center, double dx, double dy, double dz) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return Box.of(center, dx, dy, dz);
-        }
-
-        return RotationUtil.boxPlayerToWorld(Box.of(Vec3d.ZERO, dx, dy, dz), gravityDirection).offset(center);
-    }
-
-    @Redirect(
-            method = "getHorizontalFacing",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/entity/Entity;getYaw()F",
-                    ordinal = 0
-            )
-    )
-    private float redirect_getHorizontalFacing_getYaw_0(Entity entity) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return entity.getYaw();
-        }
-
-        return RotationUtil.rotPlayerToWorld(entity.getYaw(), entity.getPitch(), gravityDirection).x;
     }
 
     @Inject(
@@ -645,16 +470,6 @@ public abstract class EntityMixin implements EntityAccessor {
                     }
                 }
             }
-        }
-    }
-
-    @Inject(
-            method = "attemptTickInVoid",
-            at = @At("HEAD")
-    )
-    private void inject_attemptTickInVoid(CallbackInfo ci) {
-        if (GravityChangerMod.config.voidDamageAboveWorld && this.getY() > (double)(this.world.getTopY() + 256)) {
-            this.tickInVoid();
         }
     }
 

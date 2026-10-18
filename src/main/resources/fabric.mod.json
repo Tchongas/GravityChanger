@@ -22,9 +22,6 @@
     ],
     "client": [
       "me.andrew.gravitychanger.ClientInit"
-    ],
-    "modmenu": [
-      "me.andrew.gravitychanger.ModMenuIntegration"
     ]
   },
   "mixins": [
@@ -32,10 +29,8 @@
   ],
 
   "depends": {
-    "fabricloader": ">=0.11.3",
-    "fabric": "*",
-    "minecraft": "1.18.x",
-    "java": ">=17",
-    "cloth-config2": "*"
+    "fabricloader": ">=0.14.25",
+    "minecraft": "1.16.1",
+    "java": ">=17"
   }
 }

@@ -9,12 +9,6 @@ archivesBaseName = project.archives_base_name
 version = "${project.mod_version}-${project.minecraft_version}"
 
 repositories {
-	maven {
-		url "https://maven.shedaniel.me/"
-	}
-	maven {
-		url "https://maven.terraformersmc.com/"
-	}
 }
 
 dependencies {
@@ -22,11 +16,42 @@ dependencies {
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-	modApi("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
-		exclude(group: "net.fabricmc.fabric-api")
+}
+
+sourceSets {
+	main {
+		java {
+			include "me/andrew/gravitychanger/*.java"
+			include "me/andrew/gravitychanger/accessor/**"
+			include "me/andrew/gravitychanger/api/**"
+			include "me/andrew/gravitychanger/command/**"
+			include "me/andrew/gravitychanger/config/**"
+			include "me/andrew/gravitychanger/item/**"
+			include "me/andrew/gravitychanger/util/**"
+			include "me/andrew/gravitychanger/mixin/BlockItemMixin.java"
+			include "me/andrew/gravitychanger/mixin/CommandManagerMixin.java"
+			include "me/andrew/gravitychanger/mixin/DirectionMixin.java"
+			include "me/andrew/gravitychanger/mixin/EntityMixin.java"
+			include "me/andrew/gravitychanger/mixin/EntityShapeContextMixin.java"
+			include "me/andrew/gravitychanger/mixin/ItemMixin.java"
+			include "me/andrew/gravitychanger/mixin/ItemUsageContextMixin.java"
+			include "me/andrew/gravitychanger/mixin/LivingEntityMixin.java"
+			include "me/andrew/gravitychanger/mixin/PlayerEntityMixin.java"
+			include "me/andrew/gravitychanger/mixin/PlayerManagerMixin.java"
+			include "me/andrew/gravitychanger/mixin/ServerPlayNetworkHandlerMixin.java"
+			include "me/andrew/gravitychanger/mixin/ServerPlayerEntityMixin.java"
+			include "me/andrew/gravitychanger/mixin/ServerPlayerInteractionManagerMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/CameraMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/ClientPlayNetworkHandlerMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/ClientPlayerEntityMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/EntityRenderDispatcherMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/EntityRenderMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/GameRendererMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/InGameOverlayRendererMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/OtherClientPlayerEntityMixin.java"
+			include "me/andrew/gravitychanger/mixin/client/PlayerEntityRendererMixin.java"
+		}
 	}
-	modImplementation "com.terraformersmc:modmenu:${project.mod_menu_version}"
 }
 
 processResources {

@@ -3,7 +3,7 @@ package me.andrew.gravitychanger.mixin;
 import me.andrew.gravitychanger.accessor.EntityAccessor;
 import me.andrew.gravitychanger.util.RotationUtil;
 import net.minecraft.entity.*;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityMixin extends Entity {
-    @Shadow public abstract void readCustomDataFromNbt(NbtCompound nbt);
+    @Shadow public abstract void readCustomDataFromTag(CompoundTag nbt);
 
     @Shadow public abstract EntityDimensions getDimensions(EntityPose pose);
 
@@ -146,7 +146,7 @@ public abstract class LivingEntityMixin extends Entity {
             return new Vec3d(x, y, z);
         }
 
-        return this.getEyePos();
+        return this.getCameraPosVec(1.0F);
     }
 
     @Redirect(
@@ -163,7 +163,7 @@ public abstract class LivingEntityMixin extends Entity {
             return new Vec3d(x, y, z);
         }
 
-        return entity.getEyePos();
+        return entity.getCameraPosVec(1.0F);
     }
 
     @Inject(
@@ -180,32 +180,6 @@ public abstract class LivingEntityMixin extends Entity {
             box = box.offset(0.0D, -1.0E-6D, 0.0D);
         }
         cir.setReturnValue(RotationUtil.boxPlayerToWorld(box, gravityDirection));
-    }
-
-    @Inject(
-            method = "updateLimbs",
-            at = @At("HEAD"),
-            cancellable = true
-    )
-    private void inject_updateLimbs(LivingEntity entity, boolean flutter, CallbackInfo ci) {
-        Direction gravityDirection = ((EntityAccessor) entity).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        ci.cancel();
-
-        Vec3d playerPosDelta = RotationUtil.vecWorldToPlayer(entity.getX() - entity.prevX, entity.getY() - entity.prevY, entity.getZ() - entity.prevZ, gravityDirection);
-
-        entity.lastLimbDistance = entity.limbDistance;
-        double d = playerPosDelta.x;
-        double e = flutter ? playerPosDelta.y : 0.0D;
-        double f = playerPosDelta.z;
-        float g = (float)Math.sqrt(d * d + e * e + f * f) * 4.0F;
-        if (g > 1.0F) {
-            g = 1.0F;
-        }
-
-        entity.limbDistance += (g - entity.limbDistance) * 0.4F;
-        entity.limbAngle += entity.limbDistance;
     }
 
     @Redirect(
@@ -256,11 +230,11 @@ public abstract class LivingEntityMixin extends Entity {
             if(((EntityAccessor) attacker).gravitychanger$getAppliedGravityDirection() == Direction.DOWN) {
                 return attacker.getX();
             } else {
-                return attacker.getEyePos().x;
+                return attacker.getCameraPosVec(1.0F).x;
             }
         }
 
-        return RotationUtil.vecWorldToPlayer(attacker.getEyePos(), gravityDirection).x;
+        return RotationUtil.vecWorldToPlayer(attacker.getCameraPosVec(1.0F), gravityDirection).x;
     }
 
     @Redirect(
@@ -277,11 +251,11 @@ public abstract class LivingEntityMixin extends Entity {
             if(((EntityAccessor) attacker).gravitychanger$getAppliedGravityDirection() == Direction.DOWN) {
                 return attacker.getZ();
             } else {
-                return attacker.getEyePos().z;
+                return attacker.getCameraPosVec(1.0F).z;
             }
         }
 
-        return RotationUtil.vecWorldToPlayer(attacker.getEyePos(), gravityDirection).z;
+        return RotationUtil.vecWorldToPlayer(attacker.getCameraPosVec(1.0F), gravityDirection).z;
     }
 
     @Redirect(
@@ -366,11 +340,11 @@ public abstract class LivingEntityMixin extends Entity {
             if(((EntityAccessor) attacker).gravitychanger$getAppliedGravityDirection() == Direction.DOWN) {
                 return attacker.getX();
             } else {
-                return attacker.getEyePos().x;
+                return attacker.getCameraPosVec(1.0F).x;
             }
         }
 
-        return RotationUtil.vecWorldToPlayer(attacker.getEyePos(), gravityDirection).x;
+        return RotationUtil.vecWorldToPlayer(attacker.getCameraPosVec(1.0F), gravityDirection).x;
     }
 
     @Redirect(
@@ -387,11 +361,11 @@ public abstract class LivingEntityMixin extends Entity {
             if(((EntityAccessor) attacker).gravitychanger$getAppliedGravityDirection() == Direction.DOWN) {
                 return attacker.getZ();
             } else {
-                return attacker.getEyePos().z;
+                return attacker.getCameraPosVec(1.0F).z;
             }
         }
 
-        return RotationUtil.vecWorldToPlayer(attacker.getEyePos(), gravityDirection).z;
+        return RotationUtil.vecWorldToPlayer(attacker.getCameraPosVec(1.0F), gravityDirection).z;
     }
 
     @Redirect(
@@ -408,7 +382,7 @@ public abstract class LivingEntityMixin extends Entity {
             return new BlockPos(x, y, z);
         }
 
-        return new BlockPos(this.getEyePos());
+        return new BlockPos(this.getCameraPosVec(1.0F));
     }
 
     @Redirect(
@@ -425,7 +399,7 @@ public abstract class LivingEntityMixin extends Entity {
             return vec3d.add(x, y, z);
         }
 
-        return this.getEyePos().add(RotationUtil.vecPlayerToWorld(vec3d, gravityDirection));
+        return this.getCameraPosVec(1.0F).add(RotationUtil.vecPlayerToWorld(vec3d, gravityDirection));
     }
 
     @ModifyVariable(
@@ -464,75 +438,4 @@ public abstract class LivingEntityMixin extends Entity {
         args.set(3, vec3d.z);
     }
 
-    @ModifyArgs(
-            method = "addDeathParticles",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/world/World;addParticle(Lnet/minecraft/particle/ParticleEffect;DDDDDD)V",
-                    ordinal = 0
-            )
-    )
-    private void modify_addDeathParticless_addParticle_0(Args args) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) return;
-
-        Vec3d vec3d = this.getPos().subtract(RotationUtil.vecPlayerToWorld(this.getPos().subtract(args.get(1), args.get(2), args.get(3)), gravityDirection));
-        args.set(1, vec3d.x);
-        args.set(2, vec3d.y);
-        args.set(3, vec3d.z);
-    }
-
-    @ModifyVariable(
-            method = "blockedByShield",
-            at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lnet/minecraft/entity/LivingEntity;getRotationVec(F)Lnet/minecraft/util/math/Vec3d;",
-                    ordinal = 0
-            ),
-            ordinal = 1
-    )
-    private Vec3d modify_blockedByShield_Vec3d_1(Vec3d vec3d) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return vec3d;
-        }
-
-        return RotationUtil.vecWorldToPlayer(vec3d, gravityDirection);
-    }
-
-    @ModifyArg(
-            method = "blockedByShield",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/util/math/Vec3d;relativize(Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/Vec3d;",
-                    ordinal = 0
-            ),
-            index = 0
-    )
-    private Vec3d modify_blockedByShield_relativize_0(Vec3d vec3d) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return vec3d;
-        }
-
-        return this.getEyePos();
-    }
-
-    @ModifyVariable(
-            method = "blockedByShield",
-            at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lnet/minecraft/util/math/Vec3d;normalize()Lnet/minecraft/util/math/Vec3d;",
-                    ordinal = 0
-            ),
-            ordinal = 2
-    )
-    private Vec3d modify_blockedByShield_Vec3d_2(Vec3d vec3d) {
-        Direction gravityDirection = ((EntityAccessor) this).gravitychanger$getAppliedGravityDirection();
-        if(gravityDirection == Direction.DOWN) {
-            return vec3d;
-        }
-
-        return RotationUtil.vecWorldToPlayer(vec3d, gravityDirection);
-    }
 }
